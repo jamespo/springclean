@@ -32,7 +32,7 @@ class SpringClean(object):
         if self.options.mtime_older is not None:
             files = self.match_mtime_files(files, lt, self.calc_time(self.options.mtime_older))
         elif self.options.mtime_newer is not None:
-            files = self.match_mtime_files(files, gt, self.calc_time(self.options.mtime_older))
+            files = self.match_mtime_files(files, gt, self.calc_time(self.options.mtime_newer))
         self.files = files
         return True
 
@@ -49,17 +49,34 @@ class SpringClean(object):
         return mt_files
 
     @staticmethod
-    def calc_time(timediff_days):
-        time_threshold = int(time.mktime(time.localtime())) - int(timediff_days * 86400)
+    def calc_time(timediff, unit = 'days'):
+        secs_to_unit = { 'days' : 86400 }
+        time_threshold = int(time.mktime(time.localtime())) - int(timediff * secs_to_unit['days'])
         return time_threshold
 
     def perform_action(self):
+        action = None
         if self.options.action == 'list':
-            print 'Matched files: '
-            print self.files
+            print '%s matched files: ' % len(self.files)
+            self.process_files(self.list_file)
+        elif self.options.action == 'rm':
+            self.process_files(self.remove_file)
+            print "Removed %s files" % len(self.files)
+
+    def process_files(self, action):
+        for file in self.files:
+            action(file)
+
+
+    def list_file(self, file):
+        print self.options.dir + '/' + file
+
+    def remove_file(self, file):
+        os.remove(self.options.dir + '/' + file)
+
 
 def bombout(reason):
-    '''quit with error messages'''
+    '''quit with error message'''
     print "Error: " + reason
     sys.exit(0)
 
@@ -91,7 +108,7 @@ def main():
     checkopts(options)
     sc = SpringClean(options)
     rc = sc.run()
-    print sc.status
+    #print sc.status
 
 if __name__ == '__main__':
     main()
