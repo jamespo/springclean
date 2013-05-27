@@ -94,15 +94,16 @@ def main():
     parser = OptionParser()
     parser.add_option("--dir", dest="dir", help="directory to match from (default $PWD)",
                       default=os.getcwd())
-    parser.add_option("--match", dest="match",
+    parser.add_option("-m", "--match", dest="match",
                       help="shell-style wildcard to match logfiles to process")
-    parser.add_option("--matchre", dest="matchre",
+    parser.add_option("-x", "--matchre", dest="matchre",
                       help="regex to match logfiles to process")
-    parser.add_option("--newer", dest="mtime_newer",
+    parser.add_option("-n", "--newer", dest="mtime_newer",
                       help="match files newer than x days")
-    parser.add_option("--older", dest="mtime_older",
+    parser.add_option("-o", "--older", dest="mtime_older",
                       help="match files older than x days")
-    parser.add_option("--action", dest="action", default="list",
+    parser.add_option("-a", "--action", dest="action", default="list",
+                      choices=['rm','list','gzip','mv'],
                       help="action on matched files (rm|list|gzip|mv) default - list")
     (options, args) = parser.parse_args()
     checkopts(options)
