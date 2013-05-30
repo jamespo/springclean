@@ -8,6 +8,7 @@ import fnmatch
 import time
 from operator import lt, gt
 from optparse import OptionParser
+from subprocess import check_call
 
 class SpringClean(object):
     def __init__(self, options):
@@ -26,7 +27,7 @@ class SpringClean(object):
             self.status = excep[1] + ' ' + self.options.dir
             return False
         # get all files, then filter
-        files = [file for file in os.listdir(".")]
+        files = [myfile for myfile in os.listdir(".")]
         if self.options.matchre is not None:
             files = self.matchre_files(files)
         if self.options.mtime_older is not None:
@@ -54,7 +55,7 @@ class SpringClean(object):
             timeunit = 'd'
         timearg = int(timematch.group(1))
         threshold = self.calc_time(timearg, timeunit)
-        mt_files = [file for file in files if oper(os.stat(file).st_mtime, threshold)]
+        mt_files = [myfile for myfile in files if oper(os.stat(myfile).st_mtime, threshold)]
         return mt_files
 
     @staticmethod
@@ -74,13 +75,16 @@ class SpringClean(object):
         numfiles = 0
         actioned = {    'list' : 'Listed',
                         'gzip' : 'Gzipped',
-                        'rm'   : 'Deleted' }
+                        'rm'   : 'Deleted',
+                        'mv'   :  'Moved' }
         if self.options.action == 'list':
             numfiles = self.process_files(self.list_file)
         elif self.options.action == 'rm':
             numfiles = self.process_files(self.remove_file)
         elif self.options.action == 'gzip':
             numfiles = self.process_files(self.gzip_file)
+        elif self.options.action == 'mv':
+            numfiles = self.process_files(self.mv_file)
         self.post_action_output(actioned[self.options.action], numfiles)
 
     @staticmethod
@@ -91,8 +95,11 @@ class SpringClean(object):
             filetxt = 'file'
         print "%s %s %s" % (operation, numfiles, filetxt)
 
-    def gzip_file(self):
-        pass
+    def gzip_file(self, file):
+        check_call(['gzip', self.options.dir + '/' + file])
+
+    def mv_file(self, file):
+        os.rename(file, "%s/%s" % (self.options.destdir, file))
 
     def process_files(self, action):
         '''run action on ecach file in self.files'''
@@ -167,6 +174,8 @@ def checkopts(options):
         bombout("Choose one of match and matchre arguments")
     elif options.mtime_older is not None and options.mtime_newer is not None:
         bombout("Choose one of older or newer conditions")
+    elif options.action == 'mv' and (options.destdir is None or (not os.path.isdir(options.destdir))):
+        bombout("Must supply valid destination dir with --action mv")
 
 def main():
     parser = OptionParser()
@@ -179,12 +188,13 @@ def main():
     parser.add_option("-x", "--matchre", dest="matchre",
                       help="regex to match logfiles to process")
     parser.add_option("-n", "--newer", dest="mtime_newer",
-                      help="match files newer than x days")
+                      help="match files newer than x units (d|h|m|s), eg 3d")
     parser.add_option("-o", "--older", dest="mtime_older",
-                      help="match files older than x days")
+                      help="match files older than x units (d|h|m|s), eg 3d")
     parser.add_option("-a", "--action", dest="action", default="list",
                       choices=['rm','list','gzip','mv'],
                       help="action on matched files (rm|list|gzip|mv) default - list")
+    parser.add_option("--destdir", dest="destdir", help="directory to move files to (with --action mv)")
     (options, args) = parser.parse_args()
     checkopts(options)
     sc = SpringClean(options)
