@@ -30,9 +30,9 @@ class SpringClean(object):
         if self.options.matchre is not None:
             files = self.matchre_files(files)
         if self.options.mtime_older is not None:
-            files = self.match_mtime_files(files, lt, self.calc_time(self.options.mtime_older))
+            files = self.match_mtime_files(files, lt, self.options.mtime_older)
         elif self.options.mtime_newer is not None:
-            files = self.match_mtime_files(files, gt, self.calc_time(self.options.mtime_newer))
+            files = self.match_mtime_files(files, gt, self.options.mtime_newer)
         self.files = files
         return True
 
@@ -42,30 +42,108 @@ class SpringClean(object):
         refiles = [file for file in files if re.search(mre, file) is not None]
         return refiles
 
-    def match_mtime_files(self, files, oper, threshold):
+    def match_mtime_files(self, files, oper, time_param):
         '''match files mtime against now - delta'''
         # oper is either lt or gt
+        timeunit = None
+        timematch = re.search(r'^(\d+)(d|h|m|s)?$', time_param)
+        if timematch.group(2) is not None:
+            timeunit = timematch.group(2)
+        else:
+            # default timeunit is days
+            timeunit = 'd'
+        timearg = int(timematch.group(1))
+        threshold = self.calc_time(timearg, timeunit)
         mt_files = [file for file in files if oper(os.stat(file).st_mtime, threshold)]
         return mt_files
 
     @staticmethod
-    def calc_time(timediff, unit = 'days'):
-        secs_to_unit = { 'days' : 86400 }
-        time_threshold = int(time.mktime(time.localtime())) - int(timediff * secs_to_unit['days'])
+    def calc_time(timediff, unit = 'd'):
+        '''takes # of time units & the unit & subtracts from current date/time'''
+        secs_to_unit = { 'd' : 86400,
+                         'h' : 3600,
+                         'm' : 60,
+                         's' : 1 }
+        now_time_epoch = int(time.mktime(time.localtime()))
+        time_compare_thresh = timediff * secs_to_unit[unit]
+        time_threshold = now_time_epoch - time_compare_thresh
         return time_threshold
 
     def perform_action(self):
-        action = None
+        '''perform the selected action'''
+        numfiles = 0
+        actioned = {    'list' : 'Listed',
+                        'gzip' : 'Gzipped',
+                        'rm'   : 'Deleted' }
         if self.options.action == 'list':
-            print '%s matched files: ' % len(self.files)
-            self.process_files(self.list_file)
+            numfiles = self.process_files(self.list_file)
         elif self.options.action == 'rm':
-            self.process_files(self.remove_file)
-            print "Removed %s files" % len(self.files)
+            numfiles = self.process_files(self.remove_file)
+        elif self.options.action == 'gzip':
+            numfiles = self.process_files(self.gzip_file)
+        self.post_action_output(actioned[self.options.action], numfiles)
+
+    @staticmethod
+    def post_action_output(operation, numfiles):
+        '''display post operation summary'''
+        filetxt = 'files'
+        if numfiles == 1:
+            filetxt = 'file'
+        print "%s %s %s" % (operation, numfiles, filetxt)
+
+    def gzip_file(self):
+        pass
 
     def process_files(self, action):
+        '''run action on ecach file in self.files'''
+        num_processed = 0
         for file in self.files:
-            action(file)
+            if self.options.confirm:
+                if self.confirm_action(file):
+                    action(file)
+                    num_processed += 1
+            else:
+                # no confirmation required
+                action(file)
+                num_processed += 1
+        return num_processed
+
+    def confirm_action(self, file):
+        '''confirm action is to be run'''
+        return self.query_yes_no("About to %s %s. Are you sure" % (self.options.action, file))
+
+    @staticmethod
+    def query_yes_no(question, default="yes"):
+        """Ask a yes/no question via raw_input() and return their answer.
+
+        "question" is a string that is presented to the user.
+        "default" is the presumed answer if the user just hits <Enter>.
+            It must be "yes" (the default), "no" or None (meaning
+            an answer is required of the user).
+
+        The "answer" return value is one of "yes" or "no".
+        """
+        valid = {"yes":True,   "y":True,  "ye":True,
+                 "no":False,     "n":False}
+        if default == None:
+            prompt = " [y/n] "
+        elif default == "yes":
+            prompt = " [Y/n] "
+        elif default == "no":
+            prompt = " [y/N] "
+        else:
+            raise ValueError("invalid default answer: '%s'" % default)
+
+        while True:
+            sys.stdout.write(question + prompt)
+            choice = raw_input().lower()
+            if default is not None and choice == '':
+                return valid[default]
+            elif choice in valid:
+                return valid[choice]
+            else:
+                sys.stdout.write("Please respond with 'yes' or 'no' " \
+                                 "(or 'y' or 'n').\n")
 
 
     def list_file(self, file):
@@ -94,6 +172,8 @@ def main():
     parser = OptionParser()
     parser.add_option("--dir", dest="dir", help="directory to match from (default $PWD)",
                       default=os.getcwd())
+    parser.add_option("-c", "--confirm", help="confirm each individual operatio (rm|gzip|mv)",
+                      action="store_true", dest="confirm", default=False)
     parser.add_option("-m", "--match", dest="match",
                       help="shell-style wildcard to match logfiles to process")
     parser.add_option("-x", "--matchre", dest="matchre",
