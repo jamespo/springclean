@@ -3,17 +3,29 @@
 # springclean - process and cleanup (log) files
 # Copyright James Powell jamespo [at] gmail [dot] com - 2013
 
-import sys, re, os
+import sys, re, os, time
 import fnmatch
-import time
+import getpass
+from collections import namedtuple
 from operator import lt, gt
 from optparse import OptionParser
-from subprocess import check_call
+from subprocess import check_call, CalledProcessError
+try:
+    import syslog
+except ImportError:
+    pass   # on windows
+import pprint   # DEBUG
+
 
 class SpringClean(object):
     def __init__(self, options):
         self.options = options
         self.status = None
+        self.actioned = {   'list' : 'listed',
+                            'gzip' : 'gzipped',
+                            'rm'   : 'deleted',
+                            'mv'   : 'moved'      }
+        self.filesizes = {} # values are before & after filesize for file
 
     def run(self):
         if self.find_matches():
@@ -73,10 +85,6 @@ class SpringClean(object):
     def perform_action(self):
         '''perform the selected action'''
         numfiles = 0
-        actioned = {    'list' : 'Listed',
-                        'gzip' : 'Gzipped',
-                        'rm'   : 'Deleted',
-                        'mv'   :  'Moved' }
         if self.options.action == 'list':
             numfiles = self.process_files(self.list_file)
         elif self.options.action == 'rm':
@@ -85,39 +93,52 @@ class SpringClean(object):
             numfiles = self.process_files(self.gzip_file)
         elif self.options.action == 'mv':
             numfiles = self.process_files(self.mv_file)
-        self.post_action_output(actioned[self.options.action], numfiles)
+        self.status = self.post_action_summary(numfiles)
 
-    @staticmethod
-    def post_action_output(operation, numfiles):
-        '''display post operation summary'''
+    def post_action_summary(self, numfiles):
+        '''return post action summary'''
+        operation = self.actioned[self.options.action]
         filetxt = 'files'
         if numfiles == 1:
             filetxt = 'file'
-        print "%s %s %s" % (operation, numfiles, filetxt)
-
-    def gzip_file(self, file):
-        check_call(['gzip', self.options.dir + '/' + file])
-
-    def mv_file(self, file):
-        os.rename(file, "%s/%s" % (self.options.destdir, file))
+        return "%s %s %s" % (operation.title(), numfiles, filetxt)
 
     def process_files(self, action):
-        '''run action on ecach file in self.files'''
+        '''run action on each file in self.files'''
         num_processed = 0
-        for file in self.files:
+        for myfile in self.files:
+            run_action = False
+            fp = self.fullpath_file(myfile)
             if self.options.confirm:
-                if self.confirm_action(file):
-                    action(file)
-                    num_processed += 1
+                if self.confirm_action(fp):
+                    # confirmation required & got
+                    run_action = True
             else:
-                # no confirmation required
-                action(file)
-                num_processed += 1
+                run_action = True  # no confirmation required
+            if run_action:
+                self.filesizes[fp] = [os.path.getsize(fp), None]
+                Action_Result = namedtuple('Action_Result', 'success')
+                Action_Result = action(fp)
+                if Action_Result[0]:   # TODO: access by name later
+                    num_processed += 1
+                if self.options.syslog:
+                    self.syslog_action(self.options.action, fp, action_success)
+                if self.options.verbose:
+                    pass   # TODO add verbose output
         return num_processed
 
-    def confirm_action(self, file):
+    def syslog_action(self, action, fp, action_success):
+        '''write file action to syslog'''
+        # TODO: more details (eg destdir for move etc)
+        success_txt = 'succeeded' if not action_success else 'failed'
+        # if not action_success:
+        #     success_txt = 'failed'
+        logtxt = '%s %s %s %s' % (getpass.getuser(), self.actioned[action], fp, success_txt)
+        syslog.syslog(logtxt)
+
+    def confirm_action(self, fp):
         '''confirm action is to be run'''
-        return self.query_yes_no("About to %s %s. Are you sure" % (self.options.action, file))
+        return self.query_yes_no("About to %s %s. Are you sure" % (self.options.action, fp))
 
     @staticmethod
     def query_yes_no(question, default="yes"):
@@ -152,12 +173,38 @@ class SpringClean(object):
                 sys.stdout.write("Please respond with 'yes' or 'no' " \
                                  "(or 'y' or 'n').\n")
 
+    def gzip_file(self, fp):
+        '''gzip passed file'''
+        # TODO: check for gzip success, store gzipped size
+        try:
+            check_call(['gzip', fp])
+        except CalledProcessError:
+            self.filesizes[fp][1] = self.filesizes[fp][0]
+            return (False,)
+        self.filesizes[fp][1] = os.path.getsize(fp + '.gz')
+        return (True,)
 
-    def list_file(self, file):
-        print self.options.dir + '/' + file
+    def mv_file(self, file):
+        '''move file to destdir'''
+        os.rename(file, "%s/%s" % (self.options.destdir, file))
+        return (True,)
 
-    def remove_file(self, file):
-        os.remove(self.options.dir + '/' + file)
+    def list_file(self, fp):
+        print fp
+        return (True,)
+
+    def remove_file(self, fp):
+        try:
+            os.remove(fp)
+        except OSError:
+            self.filesizes[fp][1] = self.filesizes[fp][0]
+            return (False,)
+        self.filesizes[fp][1] = 0
+        return (True,)
+
+    def fullpath_file(self, myfile):
+        '''returns full path for passed file'''
+        return os.path.join(self.options.dir, myfile)
 
 
 def bombout(reason):
@@ -179,11 +226,17 @@ def checkopts(options):
 
 def main():
     parser = OptionParser()
+    # optional switches
     parser.add_option("--dir", dest="dir", help="directory to match from (default $PWD)",
                       default=os.getcwd())
+    parser.add_option("-v", "--verbose", help="verbose output",
+                      action="store_true", dest="verbose", default=False)
     parser.add_option("-c", "--confirm", help="confirm each individual operatio (rm|gzip|mv)",
                       action="store_true", dest="confirm", default=False)
-    parser.add_option("-m", "--match", dest="match",
+    parser.add_option("-s", "--syslog", dest="syslog", help="log actions to syslog",
+                      action="store_true", default=False)
+    # match options - choose one
+    parser.add_option("-f", "--filematch", dest="match",
                       help="shell-style wildcard to match logfiles to process")
     parser.add_option("-x", "--matchre", dest="matchre",
                       help="regex to match logfiles to process")
@@ -191,15 +244,22 @@ def main():
                       help="match files newer than x units (d|h|m|s), eg 3d")
     parser.add_option("-o", "--older", dest="mtime_older",
                       help="match files older than x units (d|h|m|s), eg 3d")
-    parser.add_option("-a", "--action", dest="action", default="list",
-                      choices=['rm','list','gzip','mv'],
-                      help="action on matched files (rm|list|gzip|mv) default - list")
+    # action options - choose one
+    parser.add_option("--rm", dest="action", help="removed matched files", action="store_const", const='rm')
+    parser.add_option("-l", "--list", dest="action", help="list matched files", action="store_const",
+                      const='list', default='list')
+    parser.add_option("-g", "--gzip", dest="action", help="gzip matched files", action="store_const",
+                      const='gzip')
+    parser.add_option("--mv", dest="action", help="move matched files to --destdir", action="store_const",
+                      const='mv')
     parser.add_option("--destdir", dest="destdir", help="directory to move files to (with --action mv)")
     (options, args) = parser.parse_args()
     checkopts(options)
     sc = SpringClean(options)
     rc = sc.run()
-    #print sc.status
+    print sc.status
+    if os.environ.get('DEBUG') is not None:
+        print pprint.pprint(sc.filesizes)
 
 if __name__ == '__main__':
     main()
