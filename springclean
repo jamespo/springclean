@@ -115,24 +115,31 @@ class SpringClean(object):
                     run_action = True
             else:
                 run_action = True  # no confirmation required
+            # perform action on file
             if run_action:
                 self.filesizes[fp] = [os.path.getsize(fp), None]
                 Action_Result = namedtuple('Action_Result', 'success')
                 Action_Result = action(fp)
-                if Action_Result[0]:   # TODO: access by name later
+                if Action_Result[0]:   # Success - TODO: access by name later
                     num_processed += 1
                 if self.options.syslog:
-                    self.syslog_action(self.options.action, fp, action_success)
+                    self.syslog_action(self.options.action, fp, Action_Result[0])
                 if self.options.verbose:
-                    pass   # TODO add verbose output
+                    self.verbose_action(self.options.action, fp, Action_Result[0])
         return num_processed
+
+    def verbose_action(self, action, fp, action_success):
+        '''print what last action performed'''
+        if self.options.action == 'list': return # no verbose for list
+        success_txt = 'succeeded' if not action_success else 'failed'
+        freed_bytes = self.pp_filesize(self.filesizes[fp][0] - self.filesizes[fp][1])
+        txt = '%s %s %s - freed %s' % (self.actioned[action], fp, success_txt, freed_bytes)
+        print txt
 
     def syslog_action(self, action, fp, action_success):
         '''write file action to syslog'''
         # TODO: more details (eg destdir for move etc)
         success_txt = 'succeeded' if not action_success else 'failed'
-        # if not action_success:
-        #     success_txt = 'failed'
         logtxt = '%s %s %s %s' % (getpass.getuser(), self.actioned[action], fp, success_txt)
         syslog.syslog(logtxt)
 
@@ -190,7 +197,7 @@ class SpringClean(object):
         return (True,)
 
     def list_file(self, fp):
-        print fp
+        print "%s (%s)" % (fp, self.pp_filesize(self.filesizes[fp][0]))
         return (True,)
 
     def remove_file(self, fp):
@@ -205,6 +212,10 @@ class SpringClean(object):
     def fullpath_file(self, myfile):
         '''returns full path for passed file'''
         return os.path.join(self.options.dir, myfile)
+
+    def pp_filesize(self, fsize):
+        '''return pprinted filesize'''
+        return "%sB" % fsize
 
 
 def bombout(reason):
