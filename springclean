@@ -16,6 +16,8 @@ except ImportError:
     pass   # on windows
 import pprint   # DEBUG
 
+__version_info__ = (0, 0, 1)
+__version__ = '.'.join(str(__version_info__))
 
 class SpringClean(object):
     def __init__(self, options):
@@ -25,6 +27,10 @@ class SpringClean(object):
                             'gzip' : 'gzipped',
                             'rm'   : 'deleted',
                             'mv'   : 'moved'      }
+        self.actioned_verb = {   'list' : 'listing',
+                            'gzip' : 'gzipping',
+                            'rm'   : 'deleting',
+                            'mv'   : 'moving'      }
         self.filesizes = {} # values are before & after filesize for file
 
     def run(self):
@@ -92,6 +98,7 @@ class SpringClean(object):
         elif self.options.action == 'gzip':
             numfiles = self.process_files(self.gzip_file)
         elif self.options.action == 'mv':
+            if self.options.verbose: print 'Destination dir: ' + self.options.destdir
             numfiles = self.process_files(self.mv_file)
         self.status = self.post_action_summary(numfiles)
 
@@ -101,6 +108,7 @@ class SpringClean(object):
         filetxt = 'files'
         if numfiles == 1:
             filetxt = 'file'
+        # TODO: calculate total space saved if rm or gzip & return
         return "%s %s %s" % (operation.title(), numfiles, filetxt)
 
     def process_files(self, action):
@@ -123,24 +131,26 @@ class SpringClean(object):
                 if Action_Result[0]:   # Success - TODO: access by name later
                     num_processed += 1
                 if self.options.syslog:
-                    self.syslog_action(self.options.action, fp, Action_Result[0])
+                    self.syslog_action(self.options.action, fp, Action_Result)
                 if self.options.verbose:
-                    self.verbose_action(self.options.action, fp, Action_Result[0])
+                    self.verbose_action(self.options.action, fp, Action_Result)
         return num_processed
 
     def verbose_action(self, action, fp, action_success):
         '''print what last action performed'''
         if self.options.action == 'list': return # no verbose for list
-        success_txt = 'succeeded' if not action_success else 'failed'
-        freed_bytes = self.pp_filesize(self.filesizes[fp][0] - self.filesizes[fp][1])
-        txt = '%s %s %s - freed %s' % (self.actioned[action], fp, success_txt, freed_bytes)
+        result_txt = 'succeeded' if action_success[0] else 'FAILED - %s' % action_success[1]
+        freed_bytes = ''
+        if self.options.action != 'mv': # don't report freed for mv for now
+            freed_bytes = ' - freed %s' % self.pp_filesize(self.filesizes[fp][0] - self.filesizes[fp][1])
+        txt = '%s %s %s %s' % (self.actioned_verb[action].title(), fp, result_txt, freed_bytes)
         print txt
 
     def syslog_action(self, action, fp, action_success):
         '''write file action to syslog'''
         # TODO: more details (eg destdir for move etc)
-        success_txt = 'succeeded' if not action_success else 'failed'
-        logtxt = '%s %s %s %s' % (getpass.getuser(), self.actioned[action], fp, success_txt)
+        result_txt = 'succeeded' if action_success[0] else 'FAILED - %s' % action_success[1]
+        logtxt = '%s %s %s %s' % (getpass.getuser(), self.actioned[action], fp, result_txt)
         syslog.syslog(logtxt)
 
     def confirm_action(self, fp):
@@ -183,18 +193,37 @@ class SpringClean(object):
     def gzip_file(self, fp):
         '''gzip passed file'''
         # TODO: check for gzip success, store gzipped size
-        try:
-            check_call(['gzip', fp])
-        except CalledProcessError:
+        gzip_success = False
+        gzip_fullpath = fp + '.gz'
+        gzip_status = None
+        if os.path.isfile(gzip_fullpath) or fp[-3:] == '.gz':
+            gzip_status = 'Gzipped file already exists or file is already gzipped'
+        else:
+            try:
+                check_call(['gzip', fp])
+            except CalledProcessError:
+                gzip_status = 'Gzip process returned an error'
+            else:
+                self.filesizes[fp][1] = os.path.getsize(fp + '.gz')
+                gzip_success = True
+                gzip_status = 'OK'
+        if not gzip_success:
             self.filesizes[fp][1] = self.filesizes[fp][0]
-            return (False,)
-        self.filesizes[fp][1] = os.path.getsize(fp + '.gz')
-        return (True,)
+        if os.environ.get('DEBUG') is not None: print (gzip_success, gzip_status)
+        return (gzip_success, gzip_status)
 
-    def mv_file(self, file):
+    def mv_file(self, fp):
         '''move file to destdir'''
-        os.rename(file, "%s/%s" % (self.options.destdir, file))
-        return (True,)
+        mv_success = False
+        mv_status = 'OK'
+        try:
+            os.rename(fp, os.path.join(self.options.destdir, os.path.basename(fp)))
+        except Exception, e:
+            if os.environ.get('DEBUG') is not None: print 'mv_file exception'
+            mv_status = str(e)
+        else:
+            mv_success = True
+        return (mv_success, mv_status)
 
     def list_file(self, fp):
         print "%s (%s)" % (fp, self.pp_filesize(self.filesizes[fp][0]))
@@ -206,6 +235,7 @@ class SpringClean(object):
         except OSError:
             self.filesizes[fp][1] = self.filesizes[fp][0]
             return (False,)
+        if os.environ.get('DEBUG') is not None: print 'removed the file'
         self.filesizes[fp][1] = 0
         return (True,)
 
