@@ -45,15 +45,21 @@ class SpringClean(object):
             self.status = excep[1] + ' ' + self.options.dir
             return False
         # get all files, then filter
-        files = [myfile for myfile in os.listdir(".")]
+        files = [myfile for myfile in os.listdir(".") if os.path.isfile(myfile)]
         if self.options.matchre is not None:
             files = self.matchre_files(files)
+        elif self.options.match is not None:
+            files = self.fnmatch_files(files)
         if self.options.mtime_older is not None:
             files = self.match_mtime_files(files, lt, self.options.mtime_older)
         elif self.options.mtime_newer is not None:
             files = self.match_mtime_files(files, gt, self.options.mtime_newer)
         self.files = files
         return True
+
+    def fnmatch_files(self, files):
+        '''match files against fnmatch'''
+        return fnmatch.filter(files, self.options.match)
 
     def matchre_files(self, files):
         '''match files against regex'''
@@ -272,7 +278,7 @@ def main():
                       default=os.getcwd())
     parser.add_option("-v", "--verbose", help="verbose output",
                       action="store_true", dest="verbose", default=False)
-    parser.add_option("-c", "--confirm", help="confirm each individual operatio (rm|gzip|mv)",
+    parser.add_option("-c", "--confirm", help="confirm each individual operation (rm|gzip|mv)",
                       action="store_true", dest="confirm", default=False)
     parser.add_option("-s", "--syslog", dest="syslog", help="log actions to syslog",
                       action="store_true", default=False)
@@ -287,13 +293,13 @@ def main():
                       help="match files older than x units (d|h|m|s), eg 3d")
     # action options - choose one
     parser.add_option("--rm", dest="action", help="removed matched files", action="store_const", const='rm')
-    parser.add_option("-l", "--list", dest="action", help="list matched files", action="store_const",
-                      const='list', default='list')
+    parser.add_option("-l", "--list", dest="action", help="list matched files (default action)",
+                      action="store_const", const='list', default='list')
     parser.add_option("-g", "--gzip", dest="action", help="gzip matched files", action="store_const",
                       const='gzip')
     parser.add_option("--mv", dest="action", help="move matched files to --destdir", action="store_const",
                       const='mv')
-    parser.add_option("--destdir", dest="destdir", help="directory to move files to (with --action mv)")
+    parser.add_option("--destdir", dest="destdir", help="directory to move files to (with --mv)")
     (options, args) = parser.parse_args()
     checkopts(options)
     sc = SpringClean(options)
