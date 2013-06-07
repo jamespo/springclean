@@ -69,7 +69,7 @@ List all files newer than 3 days in /tmp directory
 
 Move all files older than 2 hours matching "*.log" to /tmp
 
-	springclean --mv -f "*.log" --newer 2h --destdir /tmp
+	springclean --mv -f "*.log" --older 2h --destdir /tmp
 
 Other
 -----
