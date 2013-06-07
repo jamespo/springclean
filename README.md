@@ -74,6 +74,9 @@ Move all files older than 2 hours matching "*.log" to /tmp
 Other
 -----
 
+Note: unless you have disabled shell wildcard expansion (with set -f) you should quote
+your wildcards.
+
 What springclean does not do:
 + recurse into subdirectories (yet)
 + remove directories
