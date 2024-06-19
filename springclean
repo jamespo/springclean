@@ -1,9 +1,12 @@
-#!/usr/bin/env python
+#!/bin/env python3
 
 # springclean - process and cleanup (log) files
 # Copyright James Powell jamespo [at] gmail [dot] com - 2013
 
-import sys, re, os, time
+import sys
+import re
+import os
+import time
 import fnmatch
 import getpass
 from collections import namedtuple
@@ -23,14 +26,18 @@ class SpringClean(object):
     def __init__(self, options):
         self.options = options
         self.status = None
-        self.actioned = {   'list' : 'listed',
-                            'gzip' : 'gzipped',
-                            'rm'   : 'deleted',
-                            'mv'   : 'moved'      }
-        self.actioned_verb = {   'list' : 'listing',
-                            'gzip' : 'gzipping',
-                            'rm'   : 'deleting',
-                            'mv'   : 'moving'      }
+        self.actioned = {
+            'list' : 'listed',
+            'gzip' : 'gzipped',
+            'rm'   : 'deleted',
+            'mv'   : 'moved'
+        }
+        self.actioned_verb = {
+            'list' : 'listing',
+            'gzip' : 'gzipping',
+            'rm'   : 'deleting',
+            'mv'   : 'moving'
+        }
         self.filesizes = {} # values are before & after filesize for file
 
     def run(self):
@@ -41,7 +48,7 @@ class SpringClean(object):
         '''find filename matches based on conditions passed'''
         try:
             os.chdir(self.options.dir)
-        except OSError, excep:
+        except OSError as excep:
             self.status = excep[1] + ' ' + self.options.dir
             return False
         # get all files, then filter
@@ -104,8 +111,9 @@ class SpringClean(object):
         elif self.options.action == 'gzip':
             numfiles = self.process_files(self.gzip_file)
         elif self.options.action == 'mv':
-            if self.options.verbose: print 'Destination dir: ' + self.options.destdir
-            numfiles = self.process_files(self.mv_file)
+            if self.options.verbose:
+                print('Destination dir: ' + self.options.destdir)
+                numfiles = self.process_files(self.mv_file)
         self.status = self.post_action_summary(numfiles)
 
     def post_action_summary(self, numfiles):
@@ -144,13 +152,14 @@ class SpringClean(object):
 
     def verbose_action(self, action, fp, action_success):
         '''print what last action performed'''
-        if self.options.action == 'list': return # no verbose for list
+        if self.options.action == 'list':
+            return # no verbose for list
         result_txt = 'succeeded' if action_success[0] else 'FAILED - %s' % action_success[1]
         freed_bytes = ''
         if self.options.action != 'mv': # don't report freed for mv for now
             freed_bytes = ' - freed %s' % self.pp_filesize(self.filesizes[fp][0] - self.filesizes[fp][1])
         txt = '%s %s %s %s' % (self.actioned_verb[action].title(), fp, result_txt, freed_bytes)
-        print txt
+        print(txt)
 
     def syslog_action(self, action, fp, action_success):
         '''write file action to syslog'''
@@ -174,9 +183,14 @@ class SpringClean(object):
 
         The "answer" return value is one of "yes" or "no".
         """
-        valid = {"yes":True,   "y":True,  "ye":True,
-                 "no":False,     "n":False}
-        if default == None:
+        valid = {
+            "yes":True,
+            "y":True,
+            "ye":True,
+            "no":False,
+            "n":False
+        }
+        if default is None:
             prompt = " [y/n] "
         elif default == "yes":
             prompt = " [Y/n] "
@@ -187,7 +201,7 @@ class SpringClean(object):
 
         while True:
             sys.stdout.write(question + prompt)
-            choice = raw_input().lower()
+            choice = input().lower()
             if default is not None and choice == '':
                 return valid[default]
             elif choice in valid:
@@ -215,7 +229,8 @@ class SpringClean(object):
                 gzip_status = 'OK'
         if not gzip_success:
             self.filesizes[fp][1] = self.filesizes[fp][0]
-        if os.environ.get('DEBUG') is not None: print (gzip_success, gzip_status)
+        if os.environ.get('DEBUG') is not None:
+            print((gzip_success, gzip_status))
         return (gzip_success, gzip_status)
 
     def mv_file(self, fp):
@@ -224,15 +239,16 @@ class SpringClean(object):
         mv_status = 'OK'
         try:
             os.rename(fp, os.path.join(self.options.destdir, os.path.basename(fp)))
-        except Exception, e:
-            if os.environ.get('DEBUG') is not None: print 'mv_file exception'
+        except Exception as e:
+            if os.environ.get('DEBUG') is not None:
+                print('mv_file exception')
             mv_status = str(e)
         else:
             mv_success = True
         return (mv_success, mv_status)
 
     def list_file(self, fp):
-        print "%s (%s)" % (fp, self.pp_filesize(self.filesizes[fp][0]))
+        print("%s (%s)" % (fp, self.pp_filesize(self.filesizes[fp][0])))
         return (True,)
 
     def remove_file(self, fp):
@@ -241,7 +257,8 @@ class SpringClean(object):
         except OSError:
             self.filesizes[fp][1] = self.filesizes[fp][0]
             return (False,)
-        if os.environ.get('DEBUG') is not None: print 'removed the file'
+        if os.environ.get('DEBUG') is not None:
+            print('removed the file')
         self.filesizes[fp][1] = 0
         return (True,)
 
@@ -256,7 +273,7 @@ class SpringClean(object):
 
 def bombout(reason):
     '''quit with error message'''
-    print "Error: " + reason
+    print("Error: " + reason)
     sys.exit(0)
 
 def checkopts(options):
@@ -300,13 +317,13 @@ def main():
     parser.add_option("--mv", dest="action", help="move matched files to --destdir", action="store_const",
                       const='mv')
     parser.add_option("--destdir", dest="destdir", help="directory to move files to (with --mv)")
-    (options, args) = parser.parse_args()
+    options, _ = parser.parse_args()
     checkopts(options)
     sc = SpringClean(options)
-    rc = sc.run()
-    print sc.status
+    sc.run()
+    print(sc.status)
     if os.environ.get('DEBUG') is not None:
-        print pprint.pprint(sc.filesizes)
+        print(pprint.pprint(sc.filesizes))
 
 if __name__ == '__main__':
     main()
