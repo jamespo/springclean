@@ -6,9 +6,9 @@ Intro
 
 A log / file cleanup and processing commandline tool.
 
-Written in Python 2. Tested in Python 2.6 on Redhat / Centos 6 and Python 2.7 on Ubuntu 12.10.
+Now Python 3 only. Developed & tested on Linux.
 
-It should also work on Python 2.6/2.7 on Windows and MacOS X but is untested.
+Should also work on Windows and MacOS X but is untested.
 
 Usage
 -----
