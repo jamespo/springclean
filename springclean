@@ -23,6 +23,7 @@ import pprint  # DEBUG
 __version_info__ = (0, 0, 1)
 __version__ = ".".join(str(__version_info__))
 
+DEBUG = False
 
 class SpringClean(object):
     def __init__(self, options):
@@ -243,7 +244,7 @@ class SpringClean(object):
                 gzip_status = "OK"
         if not gzip_success:
             self.filesizes[fp][1] = self.filesizes[fp][0]
-        if os.environ.get("DEBUG") is not None:
+        if DEBUG:
             print((gzip_success, gzip_status))
         return (gzip_success, gzip_status)
 
@@ -254,7 +255,7 @@ class SpringClean(object):
         try:
             os.rename(fp, os.path.join(self.options.destdir, os.path.basename(fp)))
         except Exception as e:
-            if os.environ.get("DEBUG") is not None:
+            if DEBUG:
                 print("mv_file exception")
             mv_status = str(e)
         else:
@@ -271,7 +272,7 @@ class SpringClean(object):
         except OSError:
             self.filesizes[fp][1] = self.filesizes[fp][0]
             return (False,)
-        if os.environ.get("DEBUG") is not None:
+        if DEBUG:
             print("removed the file")
         self.filesizes[fp][1] = 0
         return (True,)
@@ -405,9 +406,11 @@ def main():
     sc = SpringClean(options)
     sc.run()
     print(sc.status)
-    if os.environ.get("DEBUG") is not None:
+    if DEBUG:
         print(pprint.pprint(sc.filesizes))
 
 
 if __name__ == "__main__":
+    if os.environ.get("SCDEBUG") is not None:
+        DEBUG = True
     main()
